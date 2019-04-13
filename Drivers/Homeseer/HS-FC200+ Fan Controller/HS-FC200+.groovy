@@ -1,26 +1,13 @@
-/**
- *  HomeSeer HS-FC200+
+/*
+ *  IMPORT URL: https://raw.githubusercontent.com/Botched1/Hubitat/master/Drivers/GE-Jasco%20Z-Wave%20Plus%20Fan%20Control/GE%20Z-Wave%20Plus%20Fan%20Control.groovy
  *
- *  Copyright 2018 @spalexander68, @Pluckyhd, DarwinsDen.com, HomeSeer, @aruffell 
+ *	HomeSeer HS-FC200+ Fan Controller
  *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
- *  in compliance with the License. You may obtain a copy of the License at:
+ *  Original based off of the FC200+ Fan Control port by @pluckyHD 
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *  VERSION HISTORY
+ *  1.0.0 (04/12/2019) - Initial Version
  *
- *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
- *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
- *  for the specific language governing permissions and limitations under the License.
- *
- *	Author: @spalexander68, @pluckyHD, Darwin@DarwinsDen.com, HomeSeer, @aruffell, with fan control button code leveraged from @ChadCK
- *	Date: 2019-08-Apr
- *
- *	Changelog:
- *    4.1 3/29/2019 fixed off/on not working digital, fixed compatibility of slider
- *    4.0 3/29/2019 rules didn't allow double digit buttons so changed numbers accordingly.
- *    3.0 3/29/2019 fixed blink of leds and moves multi push/hold to buttons for better integration in rules.
- *	  2.0 3/26/2019 Initial commit of Hubitat port by @PluckyHD
- *    1.0 Oct 2018 Initial Version based on WD200+
  *
  *   Button Mappings:
  *
@@ -40,7 +27,7 @@
  **/
 
 metadata {
-    definition(name: "HomeSeer HS-FC200+ Fan Controller", namespace: "spalexander", author: "Scott Alexander") {
+    definition(name: "HomeSeer HS-FC200+ Fan Controller", namespace: "UPEngineer", author: "Scott Alexander") {
 
 		capability "Actuator"
 		capability "PushableButton"
@@ -79,7 +66,7 @@ metadata {
 		input "doubleTapToFullSpeed", "bool", title: "Double-Tap Up sets to full speed", defaultValue: false, displayDuringSetup: true, required: false
 		input "singleTapToFullSpeed", "bool", title: "Single-Tap Up sets to full speed", defaultValue: false, displayDuringSetup: true, required: false
 		input "doubleTapDownToDim", "bool", title: "Double-Tap Down sets to low speed", defaultValue: false, displayDuringSetup: true, required: false
-		input "enable4FanSpeeds", "bool", title: "Enable 4 fan speed mode", defaultValue: false, displayDuringSetup: true, required: false
+		input "enable4FanSpeeds", "bool", title: "Enable 4-speed fan mode", defaultValue: false, displayDuringSetup: true, required: false
 		input "reverseSwitch", "enum", title: "Reverse Switch Paddle", multiple: false, options: ["0" : "Normal (default)", "1" : "Inverted"], required: false, displayDuringSetup: true
 		input "bottomled", "bool", title: "Bottom LED ON if Load is OFF", defaultValue: false, displayDuringSetup: true, required: false
 		input("color", "enum", title: "Default LED Color", options: ["White", "Red", "Green", "Blue", "Magenta", "Yellow", "Cyan"], description: "Select Color", required: false)
@@ -91,9 +78,9 @@ metadata {
             description: ""
         )
 		
-		input "lowThreshold", "number", title: "Low Threshold", range: "1..99"
-		input "medThreshold", "number", title: "Medium Threshold", range: "1..99"
-		input "highThreshold", "number", title: "High Threshold", range: "1..99"
+		input "lowThreshold", "number", title: "Low Threshold %  (3-speed mode)", defaultValue: "33", range: "1..99"
+		input "medThreshold", "number", title: "Medium Threshold %  (3-speed mode)", defaultValue: "66", range: "1..99"
+		input "highThreshold", "number", title: "High Threshold %  (3-speed mode)", defaultValue: "99", range: "1..99"
 		input "paramLOW", "number", title: "Low Speed Fan %", multiple: false, defaultValue: "20",  range: "1..99", required: false, displayDuringSetup: true
 		input "paramMEDLOW", "number", title: "Medium-Low Speed Fan %", multiple: false, defaultValue: "40",  range: "1..99", required: false, displayDuringSetup: true
 		input "paramMED", "number", title: "Medium Speed Fan %", multiple: false, defaultValue: "60",  range: "1..99", required: false, displayDuringSetup: true
@@ -161,7 +148,6 @@ def zwaveEvent(hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelReport 
 	}
 	
 	// Display different speeds 3 Speed vs 4 Speed
-	
 	if (cmd.value==0) {sendEvent([name: "speed", value: "off", descriptionText: "fan speed set to off"])}
 	
 	if(enable4FanSpeeds) {
