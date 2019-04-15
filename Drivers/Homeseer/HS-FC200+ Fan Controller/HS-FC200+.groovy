@@ -6,7 +6,7 @@
  *  Original based off of the FC200+ Fan Control port by @pluckyHD 
  *
  *  VERSION HISTORY
- *  1.0.0 (04/12/2019) - Initial Version
+ *  1.0.0 (04/12/2019) - Initial Release
  *
  *
  *   Button Mappings:
@@ -56,13 +56,6 @@ metadata {
 
     preferences {
 	
-		input (
-            type: "paragraph",
-            element: "paragraph",
-            title: "Fan Control General Settings",
-            description: ""
-        )
-	
 		input "doubleTapToFullSpeed", "bool", title: "Double-Tap Up sets to full speed", defaultValue: false, displayDuringSetup: true, required: false
 		input "singleTapToFullSpeed", "bool", title: "Single-Tap Up sets to full speed", defaultValue: false, displayDuringSetup: true, required: false
 		input "doubleTapDownToDim", "bool", title: "Double-Tap Down sets to low speed", defaultValue: false, displayDuringSetup: true, required: false
@@ -71,16 +64,10 @@ metadata {
 		input "bottomled", "bool", title: "Bottom LED ON if Load is OFF", defaultValue: false, displayDuringSetup: true, required: false
 		input("color", "enum", title: "Default LED Color", options: ["White", "Red", "Green", "Blue", "Magenta", "Yellow", "Cyan"], description: "Select Color", required: false)
 		
-		input (
-            type: "paragraph",
-            element: "paragraph",
-            title: "Fan Speed Thresholds",
-            description: ""
-        )
-		
 		input "lowThreshold", "number", title: "Low Threshold %  (3-speed mode)", defaultValue: "33", range: "1..99"
 		input "medThreshold", "number", title: "Medium Threshold %  (3-speed mode)", defaultValue: "66", range: "1..99"
 		input "highThreshold", "number", title: "High Threshold %  (3-speed mode)", defaultValue: "99", range: "1..99"
+		
 		input "paramLOW", "number", title: "Low Speed Fan %", multiple: false, defaultValue: "20",  range: "1..99", required: false, displayDuringSetup: true
 		input "paramMEDLOW", "number", title: "Medium-Low Speed Fan %", multiple: false, defaultValue: "40",  range: "1..99", required: false, displayDuringSetup: true
 		input "paramMED", "number", title: "Medium Speed Fan %", multiple: false, defaultValue: "60",  range: "1..99", required: false, displayDuringSetup: true
@@ -118,7 +105,8 @@ def parse(String description) {
 // Z-Wave Messages
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 def zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd) {
-    dimmerEvents(cmd)
+    if (logEnable) log.debug "---BASIC REPORT V1--- ${device.displayName} sent ${cmd}"
+	dimmerEvents(cmd)
 }
 
 def zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd) {
@@ -126,7 +114,6 @@ def zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd) {
 }
 
 def zwaveEvent(hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelReport cmd) {
-    //dimmerEvents(cmd)
 	if (logEnable) log.debug "---SwitchMultilevelReport V3---  ${device.displayName} sent ${cmd}"
 	
 	def currSpeed = device.currentValue("speed")
@@ -168,27 +155,17 @@ def zwaveEvent(hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelReport 
 		if (cmd.value >= lowThresholdvalue+1 && cmd.value <= medThresholdvalue) { sendEvent([name: "speed", value: "medium", displayed: true, descriptionText: "fan speed set to medium"]) }
 		if (cmd.value >= medThresholdvalue+1) { sendEvent([name: "speed", value: "high", displayed: true, descriptionText: "fan speed set to high"]) }
 
-		}
+	}
 }
 
 def zwaveEvent(hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelSet cmd) {
-    log.debug "Doesn't do anything right now"
+    dimmerEvents(cmd)
 }
 
 private dimmerEvents(hubitat.zwave.Command cmd) {
-	def lowThresholdvalue = (settings.lowThreshold != null && settings.lowThreshold != "") ? settings.lowThreshold.toInteger() : 33
-	def medThresholdvalue = (settings.medThreshold != null && settings.medThreshold != "") ? settings.medThreshold.toInteger() : 66
-	def highThresholdvalue = (settings.highThreshold != null && settings.highThreshold != "") ? settings.highThreshold.toInteger() : 99
-
     def value = (cmd.value ? "on" : "off")
-    def result = [createEvent(name: "switch", value: value, isStateChange: true)]
+    def result = [createEvent(name: "switch", value: cmd.value ? "on" : "off")]
     state.lastLevel = cmd.value
-    if (cmd.value && cmd.value <= 100) {
-        if (cmd.value > 0 && cmd.value <= lowThresholdvalue) { sendEvent(name: "currentState", value: "LOW" as String) }
-        if (cmd.value >= lowThresholdvalue+1 && cmd.value <= medThresholdvalue) { sendEvent(name: "currentState", value: "MED" as String) }
-	    if (cmd.value >= medThresholdvalue+1) { sendEvent(name: "currentState", value: "HIGH" as String) }
-        result << createEvent(name: "level", value: cmd.value, unit: "%")
-    }
     return result
 }
 
@@ -211,26 +188,34 @@ def zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
 	return result
 }
 
+def zwaveEvent(hubitat.zwave.commands.hailv1.Hail cmd) {
+    createEvent([name: "hail", value: "hail", descriptionText: "Switch button was pressed", displayed: false])
+}
+
 def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
-	log.debug "---MANUFACTURER SPECIFIC REPORT V2--- ${device.displayName} sent ${cmd}"
-    log.debug "manufacturerId: 		${cmd.manufacturerId}"
-    log.debug "manufacturerName: 	${cmd.manufacturerName}"
+    log.debug "---MANUFACTURER SPECIFIC REPORT V2--- ${device.displayName} sent ${cmd}"
+	log.debug "manufacturerId: ${cmd.manufacturerId}"
+    log.debug "manufacturerName: ${cmd.manufacturerName}"
     state.manufacturer = cmd.manufacturerName
-    log.debug "productId: 			${cmd.productId}"
-    log.debug "productTypeId: 		${cmd.productTypeId}"
+    log.debug "productId: ${cmd.productId}"
+    log.debug "productTypeId: ${cmd.productTypeId}"
     def msr = String.format("%04X-%04X-%04X", cmd.manufacturerId, cmd.productTypeId, cmd.productId)
     updateDataValue("MSR", msr)
-	sendEvent([descriptionText: "$device.displayName MSR: $msr", isStateChange: false])
+    setFirmwareVersion()
+    createEvent([descriptionText: "$device.displayName MSR: $msr", isStateChange: false])
 }
 
 def zwaveEvent(hubitat.zwave.commands.versionv1.VersionReport cmd) {
-	def fw = "${cmd.applicationVersion}.${cmd.applicationSubVersion}"
-	updateDataValue("fw", fw)
-	if (logEnable) log.debug "---VERSION REPORT V1--- ${device.displayName} is running firmware version: $fw, Z-Wave version: ${cmd.zWaveProtocolVersion}.${cmd.zWaveProtocolSubVersion}"
-}
-
-def zwaveEvent(hubitat.zwave.commands.hailv1.Hail cmd) {
-    createEvent([name: "hail", value: "hail", descriptionText: "Switch button was pressed", displayed: false])
+    //updateDataValue(“applicationVersion”, "${cmd.applicationVersion}")
+    log.debug("received Version Report")
+    log.debug "applicationVersion: ${cmd.applicationVersion}"
+    log.debug "applicationSubVersion: ${cmd.applicationSubVersion}"
+    state.firmwareVersion = cmd.applicationVersion + '.' + cmd.applicationSubVersion
+    log.debug "zWaveLibraryType: ${cmd.zWaveLibraryType}"
+    log.debug "zWaveProtocolVersion: ${cmd.zWaveProtocolVersion}"
+    log.debug "zWaveProtocolSubVersion: ${cmd.zWaveProtocolSubVersion}"
+    setFirmwareVersion()
+    createEvent([descriptionText: "Firmware V" + state.firmwareVersion, isStateChange: false])
 }
 
 def zwaveEvent(hubitat.zwave.commands.firmwareupdatemdv2.FirmwareMdReport cmd) {
@@ -246,8 +231,8 @@ def zwaveEvent(hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelStopLev
 
 def zwaveEvent(hubitat.zwave.Command cmd) {
     // Handles all Z-Wave commands we aren’t interested in
-	if (logEnable) log.warn "${device.displayName} received unhandled command: ${cmd}"
-    [:]
+    if (logEnable) log.warn "${device.displayName} received unhandled command: ${cmd}"
+	[:]
 }
 
 def on() {
@@ -255,7 +240,7 @@ def on() {
 	def cmds = []
     sendEvent(name: "switch", value: "on", isStateChange: true, descriptionText: "$device.displayName is on")
 	if (logDesc) log.info "$device.displayName is on"
-	push("digital",7)
+	push("digital", 7)
     cmds << zwave.basicV1.basicSet(value: 0xFF).format()
     cmds << zwave.switchMultilevelV1.switchMultilevelGet().format()
     delayBetween(cmds, 5000)
@@ -266,177 +251,10 @@ def off() {
 	def cmds = []
 	sendEvent(name: "switch", value: "off", isStateChange: true, descriptionText: "$device.displayName is off")
 	if (logDesc) log.info "$device.displayName is off"
-	push("digital",8)
+	push("digital", 8)
     cmds << zwave.basicV1.basicSet(value: 0x00).format()
    	cmds << zwave.switchMultilevelV1.switchMultilevelGet().format()
 	delayBetween(cmds, 3000)
-}
-
-def push(btnNum)
-{
-	if (logEnable) log.debug "Button pushed $btnNum"
-	push("Digital", btnNum)
-}
-
-def push(String buttonType, btnNum) {
-	def cmds = []
-	def needsCmds = false
-	def statValue = ""
-	if (btnNum > 100)
-	{
-			def numbers = btnNum.toString()
-			def led = numbers.charAt(0).toString().toInteger()
-			def color = numbers.charAt(1).toString().toInteger()
-			def blink = numbers.charAt(2).toString().toInteger()
-			log.debug "stats $led $color $blink"
-			cmds += setStatusLed(led, color, blink,true)
-			log.debug "cmds to fire = $cmds"
-			needsCmds = true
-			colorName = getColor(color)
-	
-		statValue = "LED # $led Color: $colorName Blink: ${blink==0? "Off": "ON"}"
-	}
-	else
-	{
-		switch(btnNum){
-
-
-					case 1:
-					 // 2 Times
-							statValue = "Tap ▲▲"
-							break
-
-					case 2:
-					 // 2 Times
-							statValue = "Tap ▼▼"
-							break
-					case 3:
-					// 3 times
-							statValue = "Tap ▲▲▲"
-							break
-					case 4:
-					// 3 times
-							statValue = "Tap ▼▼▼"
-							break
-
-					case 5:
-					//Hold 
-							statValue = "Hold ▲"
-							break
-
-					case 6:
-					//Hold 
-							statValue = "Hold ▼"
-							break
-
-					case 7:
-							statValue ="Tap ▲"
-							break
-
-					case 8:
-							statValue ="Tap ▼"
-							break		
-
-					case 9:
-					// 4 times
-							statValue = "Tap ▲▲▲▲"
-							break
-					case 10:
-					// 4 times
-							statValue = "Tap ▼▼▼▼"
-							break
-
-					case 11: 
-					// 5 times
-							statValue = "Tap ▲▲▲▲▲"
-							break
-
-					case 12: 
-					// 5 times
-							statValue = "Tap ▼▼▼▼▼ "
-							break
-
-					default:
-					// unexpected case
-						log.debug("unexpected button number: $btnNum")
-					break
-				 }
-	}
-
-    sendEvent(name: "pushed", value: btnNum,data: [buttonNumber: btnNum], descriptionText: "$device.displayName button $btnNum was pushed",  type: "$buttonType", isStateChange: true)
-	sendEvent(name: "btnStat", value: statValue, isStateChange: true)
-	if(needsCmds){
-		delayBetween(cmds,500)}
-}
-
-def updated() {
-    log.info "Updating..."
-    log.warn "debug logging is: ${logEnable == true}"
-    log.warn "description logging is: ${txtEnable == true}"
-    if (logEnable) runIn(1800,logsOff)
-
-    if (state.lastUpdated && now() <= state.lastUpdated + 3000) return
-    state.lastUpdated = now()
-
-	def cmds = []
-
-	// Set Paddle orientation
-	if (reverseSwitch=="1") {
-		cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 4, size: 1).format()
-    } else {
-		cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 4, size: 1).format()
-    }
-
-	// Set bottom LED
-    if (bottomled) {
-		cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 3, size: 1).format()
-    } else {
-        cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 3, size: 1).format()
-    }
-
-    //Sets fan type
-    if (enable4FanSpeeds) {
-        //4 Speeds
-		cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 5, size: 1).format()
-    } else {
-        //3 Speeds
-        cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 5, size: 1).format()
-    }
-	
-	// Set default color
-    if (color) {
-        switch (color) {
-            case "White":
-                cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 14, size: 1).format()
-                break
-            case "Red":
-                cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 14, size: 1).format()
-                break
-            case "Green":
-                cmds << zwave.configurationV2.configurationSet(configurationValue: [2], parameterNumber: 14, size: 1).format()
-                break
-            case "Blue":
-                cmds << zwave.configurationV2.configurationSet(configurationValue: [3], parameterNumber: 14, size: 1).format()
-                break
-            case "Magenta":
-                cmds << zwave.configurationV2.configurationSet(configurationValue: [4], parameterNumber: 14, size: 1).format()
-                break
-            case "Yellow":
-                cmds << zwave.configurationV2.configurationSet(configurationValue: [5], parameterNumber: 14, size: 1).format()
-                break
-            case "Cyan":
-                cmds << zwave.configurationV2.configurationSet(configurationValue: [6], parameterNumber: 14, size: 1).format()
-                break
-        }
-    }	
-	
-    //Enable the following configuration gets to verify configuration in the logs
-    cmds << zwave.configurationV1.configurationGet(parameterNumber: 14).format()
-	cmds << zwave.configurationV1.configurationGet(parameterNumber: 5).format()
-    cmds << zwave.configurationV1.configurationGet(parameterNumber: 4).format()
-	cmds << zwave.configurationV1.configurationGet(parameterNumber: 3).format()
-	
-    delayBetween(cmds, 500)	
 }
 
 // dummy setLevel command with duration for compatibility with non-Homeseer hubs
@@ -449,7 +267,7 @@ def setLevel(value) {
 	def level = Math.max(Math.min(valueaux, 99), 0)
 	def currval = device.currentValue("switch")
 	state.level = level
-	
+
 	if (logEnable) log.debug "SetLevel (value) - currval: $currval"
 	
 	if (level > 0 && currval == "off") {
@@ -470,7 +288,6 @@ def setLevel(value) {
     result += response(zwave.switchMultilevelV1.switchMultilevelGet())
     result += response("delay 5000")
     result += response(zwave.switchMultilevelV1.switchMultilevelGet())
-	
 }
 
 def setSpeed(fanspeed) {
@@ -522,13 +339,11 @@ def setSpeed(fanspeed) {
 			break
 		case "on":
 			if (logEnable) log.debug "speed on detected"	
-			//sendEvent([name: "speed", value: "on", displayed: true, descriptionText: "fan speed set to $fanspeed"])		
+			sendEvent([name: "speed", value: "on", displayed: true, descriptionText: "fan speed set to $fanspeed"])		
 			on()
 			break
 		case "auto":
-			//if (logEnable) log.debug "speed auto detected"	
-			//sendEvent([name: "speed", value: "on", displayed: true, descriptionText: "fan speed set to $fanspeed"])		
-			//on()
+			if (logEnable) log.debug "speed auto detected"	
 			log.warn "Speed AUTO requested. This doesn't do anything in this driver right now."
 			break
 		default:
@@ -564,6 +379,10 @@ def setBlinkDurationMilliseconds(newBlinkDuration) {
 }
 
 def setStatusLed(led, color, blink) {
+	setStatusLed(led,color,blink,false)
+}
+
+def setStatusLed(led, color, blink, boolean fromButton) {
 
     def cmds = []
 	led = led.toInteger()
@@ -602,7 +421,7 @@ def setStatusLed(led, color, blink) {
             break
     }	
 
-    if (state.statusled1 == 0 && state.statusled2 == 0 && state.statusled3 == 0 && state.statusled4 == 0 && state.statusled5 == 0 && state.statusled6 == 0 && state.statusled7 == 0) {
+    if (state.statusled1 == 0 && state.statusled2 == 0 && state.statusled3 == 0 && state.statusled4 == 0) {
         // no LEDS are set, put back to NORMAL mode
         cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 13, size: 1).format()
     } else {
@@ -640,7 +459,7 @@ def setStatusLed(led, color, blink) {
                 break
             case 0:
             case 5:
-                blinkval = 0x7F
+                blinkval = 0xF
                 break
         }
         cmds << zwave.configurationV2.configurationSet(configurationValue: [blinkval], parameterNumber: 31, size: 1).format()
@@ -674,16 +493,13 @@ def setStatusLed(led, color, blink) {
 		if (logEnable) log.debug "New blinkval $blinkval"
     }
     delayBetween(cmds, 150)	
-
-	}
+}
 
 /*
  * Set Dimmer to Status mode (exit normal mode)
  *
- */
-
+*/
 def setLEDModeToNormal() {
-	if (logEnable) log.debug "LED Mode set to Normal"
     def cmds = []
 	sendEvent(name: "ledMode", value: "Normal",isStateChange: true)
     cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 13, size: 1).format()
@@ -694,11 +510,11 @@ def setLEDModeToNormal() {
  * Set the color of the LEDS for normal dimming mode, shows the current dim level
  */
 def setLEDModeToStatus() {
-	if (logEnable) log.debug "LED Mode Set to Status"
     def cmds = []
 	sendEvent(name: "ledMode", value: "Status",isStateChange: true)
     cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 13, size: 1).format()
     delayBetween(cmds, 500)
+	
 }
 
 def zwaveEvent(hubitat.zwave.commands.centralscenev1.CentralSceneNotification cmd) {
@@ -715,8 +531,7 @@ def zwaveEvent(hubitat.zwave.commands.centralscenev1.CentralSceneNotification cm
                     result += createEvent([name: "switch", value: "on", type: "physical"])
 
                     if (singleTapToFullSpeed) {
-                        //result += setLevel(99)
-						result += setSpeed("high")
+                        result += setSpeed("high")
                         result += response("delay 5000")
                         result += response(zwave.switchMultilevelV1.switchMultilevelGet())
                     }
@@ -733,7 +548,7 @@ def zwaveEvent(hubitat.zwave.commands.centralscenev1.CentralSceneNotification cm
                     // 2 Times
                     result += createEvent(push("physical",1))
                     if (doubleTapToFullSpeed) {
-						result += setSpeed("high")
+                        result += setSpeed("high")
                         result += response("delay 5000")
                         result += response(zwave.switchMultilevelV1.switchMultilevelGet())
                     }
@@ -805,17 +620,242 @@ def zwaveEvent(hubitat.zwave.commands.centralscenev1.CentralSceneNotification cm
     return result
 }
 
-def refresh() {
-	log.info "refresh() was called"
+def getColor(color)
+{
+	def colorName = ""
 	
-	def cmds = []
-	cmds << zwave.switchBinaryV1.switchBinaryGet().format()
-	cmds << zwave.switchMultilevelV1.switchMultilevelGet().format()
-	if (getDataValue("MSR") == null) {
-		cmds << zwave.manufacturerSpecificV1.manufacturerSpecificGet().format()
+	switch(color){
+		case 0:
+			  	colorName = "Off"
+				break
+		case 1:
+				colorName = "Red"
+				break
+		case 2: 
+				colorName = "Green"
+				break
+		case 3:
+				colorName = "Blue"
+				break
+		case 4:
+				colorName = "Magenta"
+				break
+		case 5:
+				colorName = "Yellow"
+				break
+		case 6:
+				colorName = "Cyan"
+				break
+		case 7:
+				colorName = "White"
+				break
+		default:
+			
+				colorName = "Not Valid Color"
+				break
 	}
-	cmds << zwave.versionV1.versionGet().format()
-	delayBetween(cmds,1000)
+	
+	return colorName
+}
+
+def push(btnNum)
+{
+	if (logEnable) log.debug "Button pushed $btnNum"
+	push("Digital", btnNum)
+}
+
+// Valid button numbers are 10-16 and 20-26 first number 1 indicates up and 2 indicates down. Second number 0 = pushed once
+def push(String buttonType, btnNum) {
+	def cmds = []
+	def needsCmds = false
+	def statValue = ""
+	if (btnNum > 100)
+	{
+			def numbers = btnNum.toString()
+			def led = numbers.charAt(0).toString().toInteger()
+			def color = numbers.charAt(1).toString().toInteger()
+			def blink = numbers.charAt(2).toString().toInteger()
+			if (logEnable) log.debug "stats $led $color $blink"
+			cmds += setStatusLed(led, color, blink,true)
+			if (logEnable) log.debug "cmds to fire = $cmds"
+			needsCmds = true
+			colorName = getColor(color)
+	
+		statValue = "LED # $led Color: $colorName Blink: ${blink==0? "Off": "ON"}"
+	}
+	else
+	{
+		switch(btnNum){
+
+			case 1:
+				// 2 Times
+				statValue = "Tap ▲▲"
+				break
+
+			case 2:
+				// 2 Times
+				statValue = "Tap ▼▼"
+				break
+			
+			case 3:
+				// 3 times
+				statValue = "Tap ▲▲▲"
+				break
+			
+			case 4:
+				// 3 times
+				statValue = "Tap ▼▼▼"
+				break
+
+			case 5:
+				//Hold 
+				statValue = "Hold ▲"
+				break
+
+			case 6:
+				//Hold 
+				statValue = "Hold ▼"
+				break
+
+			case 7:
+				statValue ="Tap ▲"
+				break
+
+			case 8:
+				statValue ="Tap ▼"
+				break		
+
+			case 9:
+				// 4 times
+				statValue = "Tap ▲▲▲▲"
+				break
+			
+			case 10:
+				// 4 times
+				statValue = "Tap ▼▼▼▼"
+				break
+
+			case 11: 
+				// 5 times
+				statValue = "Tap ▲▲▲▲▲"
+				break
+
+			case 12: 
+				// 5 times
+				statValue = "Tap ▼▼▼▼▼ "
+				break
+
+			default:
+				// unexpected case
+				log.debug("unexpected button number: $btnNum")
+				break
+		}
+	}
+
+    sendEvent(name: "pushed", value: btnNum,data: [buttonNumber: btnNum], descriptionText: "$device.displayName button $btnNum was pushed",  type: "$buttonType", isStateChange: true)
+	sendEvent(name: "btnStat", value: statValue, isStateChange: true)
+	if(needsCmds){
+		delayBetween(cmds,500)
+	}
+}
+
+def setFirmwareVersion() {
+    def versionInfo = ''
+    if (state.manufacturer) {
+        versionInfo = state.manufacturer + ' '
+    }
+    if (state.firmwareVersion) {
+        versionInfo = versionInfo + "Firmware V" + state.firmwareVersion
+    } else {
+        versionInfo = versionInfo + "Firmware unknown"
+    }
+    sendEvent(name: "firmwareVersion", value: versionInfo, isStateChange: true, displayed: false)
+}
+
+def configure() {
+    log.debug("configure() called")
+
+    sendEvent(name: "numberOfButtons", value: 12, displayed: true)
+    def commands = []
+    setPrefs()
+    commands << zwave.switchMultilevelV1.switchMultilevelGet().format()
+    commands << zwave.manufacturerSpecificV1.manufacturerSpecificGet().format()
+    commands << zwave.versionV1.versionGet().format()
+	log.debug commands
+    delayBetween(commands, 500)
+}
+
+def refresh() {
+    log.debug "refresh() called"
+    configure()
+}
+
+def setPrefs() {
+    log.debug("set prefs")
+    def cmds = []
+	// Set default color
+    if (color) {
+        switch (color) {
+            case "White":
+                cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 14, size: 1).format()
+                break
+            case "Red":
+                cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 14, size: 1).format()
+                break
+            case "Green":
+                cmds << zwave.configurationV2.configurationSet(configurationValue: [2], parameterNumber: 14, size: 1).format()
+                break
+            case "Blue":
+                cmds << zwave.configurationV2.configurationSet(configurationValue: [3], parameterNumber: 14, size: 1).format()
+                break
+            case "Magenta":
+                cmds << zwave.configurationV2.configurationSet(configurationValue: [4], parameterNumber: 14, size: 1).format()
+                break
+            case "Yellow":
+                cmds << zwave.configurationV2.configurationSet(configurationValue: [5], parameterNumber: 14, size: 1).format()
+                break
+            case "Cyan":
+                cmds << zwave.configurationV2.configurationSet(configurationValue: [6], parameterNumber: 14, size: 1).format()
+                break
+        }
+    }
+
+	// Set Paddle orientation
+	if (reverseSwitch == "1") {
+		cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 4, size: 1).format()
+    } else {
+		cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 4, size: 1).format()
+    }
+
+	// Set bottom LED
+    if (bottomled) {
+		cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 3, size: 1).format()
+    } else {
+        cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 3, size: 1).format()
+    }
+
+    //Sets fan type
+    if (enable4FanSpeeds) {
+        //4 Speeds
+		cmds << zwave.configurationV2.configurationSet(configurationValue: [1], parameterNumber: 5, size: 1).format()
+    } else {
+        //3 Speeds
+        cmds << zwave.configurationV2.configurationSet(configurationValue: [0], parameterNumber: 5, size: 1).format()
+    }
+	
+    //Enable the following configuration gets to verify configuration in the logs
+    cmds << zwave.configurationV1.configurationGet(parameterNumber: 14).format()
+	cmds << zwave.configurationV1.configurationGet(parameterNumber: 5).format()
+    cmds << zwave.configurationV1.configurationGet(parameterNumber: 4).format()
+	cmds << zwave.configurationV1.configurationGet(parameterNumber: 3).format()
+	
+    delayBetween(cmds, 500)
+}
+
+def updated() {
+    def cmds = []
+	if (logEnable) runIn(1800,logsOff)
+    setPrefs()
 }
 
 def logsOff(){
